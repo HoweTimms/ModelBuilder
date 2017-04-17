@@ -1,0 +1,98 @@
+import com.fairisaac.mb.data.*
+import com.fairisaac.mb.common.util.DateUtil;
+    
+app.logger.info("*********************************************************************************")
+app.logger.info("*********                    Code Launched                         **************")
+app.logger.info("*********************************************************************************")
+
+String Path = "../../data/DataProcessing/" //location to dataset 
+String sourceData = "Development_App_Perf_Data_Excl.mbd"// dataset name
+int NumberOfPerfMonths = 30
+String FirstPerfMonth = '20130730'  // YYYYMMDD            Date of DELQ0 extract i.e. oldest data
+delqDef = 90 //bad definition in days
+
+
+//define a filter, this can be on the same line but seperate here for clarity
+// filter non-excluisons. only eligible for development population is considered.
+String filterString = "Exclusion ==0 && AcctOpen_Ind==1"
+
+String ArrayVars = ""
+for (i=0; i<=NumberOfPerfMonths; i++){
+    if (i==0) ArrayVars = "DELQ" + i
+    else ArrayVars = ArrayVars + " DELQ" + i 
+}
+Dataset dsInput = app.data.open(source:Path + sourceData, filter:app.filter.where(filterString))
+{
+    //generates delinquency array. array contains 31 months of historic delinquency
+    buildArray(vars: ArrayVars, name: 'Arr_FICO_FI_PRF_CURR_DELQ', drop: true, asList: true)
+    bin(vars:'APPLICATION_DATE', binner:app.binning.system.DateQuarters, use:'label') 
+  }
+  
+Dataset DsInputWithArray = app.data.create()
+
+app.data.copy(in:dsInput, out:DsInputWithArray)
+Dataset ds1 = app.data.create()
+ds1.newVariable('MOB','numeric')// month on book variable
+
+DsInputWithArray.each{rec -> 
+
+
+// populate OpenIndex for each account
+// performance of an account should be checked only after open date
+// OpenIndex reflects correct index in array assuming that an index with lower value means the oldest month and with the highest -the most recent month
+
+    Date dt1 = DateUtil.parseToDate(FirstPerfMonth, 'yyyyMMdd') //set the processing date
+    rec['Open_Index'] = DateUtil.monthsAfter(dt1, rec['APPLICATION_DATE'])
+
+
+// identifies at what MOB customer first time became bad
+      i=0
+      for(i=rec['Open_Index'];i<=NumberOfPerfMonths;i++)
+      {
+        if (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] != null){
+            if(!MV.isMissing(rec['Arr_FICO_FI_PRF_CURR_DELQ'][i])) {
+                if (rec['Arr_FICO_FI_PRF_CURR_DELQ'][i] >= delqDef) {
+                    rec['MOB'] = i- rec['Open_Index']
+                    break
+                }
+            }
+        }
+      }
+      if (rec.MOB >=0 )ds1.add(rec)
+}
+ds1.save()
+
+// 
+Dataset subset = app.data.create('../../data/PerformanceWindowResults/PerformanceWindow.mbd', true)     
+app.data.copy( in: ds1, out: subset )
+
+// output the results 
+// reflects Month on books by Open Date/Open Index
+// the results should be then put to excel and reflect vintages for each application quarter
+
+
+
+TaskResult r1 = app.task.stats(in: ds1)
+{
+    freq(vars: 'MOB', by: 'APPLICATION_DATE_bin', maxCount: 300000, maxLevel: 300000)
+}
+
+
+app.logger.info(r1.toString())
+
+//produces final report in html format
+app.report.stats(
+    in: r1,   
+    out: '../../data/PerformanceWindowResults/Result.html',
+)
+
+
+
+
+
+
+
+
+
+
+

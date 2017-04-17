@@ -1,0 +1,81 @@
+//requires (heap:'10G')
+
+import com.fairisaac.mb.common.util.DateUtil
+import com.fairisaac.mb.common.util.* 
+import static com.fairisaac.mb.common.util.DateUtil.*
+import com.fairisaac.mb.data.DataRecord
+import com.fairisaac.mb.common.util.DateUtil
+import java.util.ArrayList
+import com.fairisaac.mb.api.data.*
+import com.fairisaac.mb.api.data.Dataset
+import com.fairisaac.mb.common.lib.*
+import com.fairisaac.mb.common.task.*
+
+String FirstPerfMonth = '20130730'  // YYYYMMDD            Date of DELQ0 extract i.e. oldest data
+MaxPerfMonths = 30
+PerformanceWindow = 12  // Define Outcome period
+delqDef = 60            // Define days past due Bad Definition
+L_IndetDef = 30         // Define lower bound for days past due for Indeterminates
+U_IndetDef = 60         // Define lower bound for days past due for Indeterminates
+
+Dataset ds0 = app.data.open(in: '../../../data/DataProcessing/Development_App_Perf_Data_Excl.mbd') // source dataset 
+{
+  buildArray(vars: 'DELQ0 DELQ1 DELQ2 DELQ3 DELQ4 DELQ5 DELQ6 DELQ7 DELQ8 DELQ9 DELQ10 DELQ11 DELQ12 DELQ13 DELQ14 DELQ15 DELQ16 DELQ17 DELQ18 DELQ19 DELQ20 DELQ21 DELQ22 DELQ23 DELQ24 DELQ25 DELQ26 DELQ27 DELQ28 DELQ29 DELQ30', name: 'Arr_FICO_FI_PRF_CURR_DELQ', drop: true, asList: true)
+}
+
+
+    Date dt1 = DateUtil.parseToDate(FirstPerfMonth, 'yyyyMMdd') //set the processing date
+
+Dataset ds1 = app.data.create() //new dataset
+ds1.prepareToAdd(ds0)
+ds0.each{rec -> 
+
+           rec['targetGB_60']=MV.MV
+           
+           if(rec['FINAL_STATUS']=='Accept' && rec['Exclusion']==0)
+           {
+           
+                rec['FICO_Open_Index'] = DateUtil.monthsAfter(dt1, rec['APPLICATION_DATE'])
+           
+               rec['targetGB_60']=7   //by default accounts is not indefault status
+               
+               i=0
+               for(i=rec['FICO_Open_Index'];i<=(rec['FICO_Open_Index']+PerformanceWindow);i++)
+                            //check XX months delinquency after open date
+            
+               {  
+                 if (i<=MaxPerfMonths){         //Dont check after end of data
+                 if(!MV.isMissing(rec.Arr_FICO_FI_PRF_CURR_DELQ[i]))
+                  {
+                    if(rec.Arr_FICO_FI_PRF_CURR_DELQ[i]>=delqDef)
+                    {
+                        rec['targetGB_60']=3
+                        break
+                   }
+                      else if(rec.Arr_FICO_FI_PRF_CURR_DELQ[i] > L_IndetDef && rec.Arr_FICO_FI_PRF_CURR_DELQ[i] < U_IndetDef)
+                          { rec['targetGB_60']=6
+                      }
+                  }
+                }
+             }
+           }
+           else if(rec['FINAL_STATUS']=='NTU' && rec['Exclusion']==0) {rec['targetGB_60']=4}
+           else if(rec['FINAL_STATUS']=='Rejected' && rec['Exclusion']==0) {rec['targetGB_60']=5}
+           else if (rec['Exclusion']>0) {rec['targetGB_60']=1}
+           else   {rec['targetGB_60']=-1}
+     ds1.add(rec)
+}
+ds1.save()
+
+Dataset subset = app.data.create('../../../data/DataProcessing/Development_App_Perf_Data_GBFlag.mbd',true)     
+app.data.copy( in: ds1, out: subset )
+
+
+TaskResult r1 = app.task.stats(in: ds1)
+{
+    freq(vars: 'targetGB_60', maxCount: 300000, maxLevel: 300000)
+}
+app.logger.info(r1.toString())
+
+
+

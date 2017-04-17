@@ -1,0 +1,73 @@
+
+import com.fairisaac.mb.common.data.base.BaseTable
+
+//-------------------------------------------------------------
+// Parameters :
+//-------------------------------------------------------------
+String dsURI = '../../data/KGB_Candidates/OutOfTime_Candidates.mbd'
+
+String modelURI20 = '../D_KGB_Development/KGB.pmml'
+String outloc = '../../data/Scored/OutOfTime_Scored.mbd'
+
+
+//-------------------------------------------------------------
+// Note: assumes that the bins are properly ranked
+// I.e. they are in order of WOE. 
+//-------------------------------------------------------------
+
+// Load scorecard
+NumericModel myModel20 = app.model.load(modelURI20)
+
+// List of variables in the model
+ArrayList modelVars20 = myModel20.binnings.keySet()
+
+// Open dataset, binning the model variables
+Dataset dsIn20 = app.data.open( source:dsURI){
+    modelVars20.each{ varName -> 
+        bin(vars:varName, binner:myModel20.binnings[varName], use:'numeric')          
+        bin(vars:varName, binner:myModel20.binnings[varName], use:'label', suffix: '_label')                                        
+    }
+}
+// Get model weight for each binning
+Dataset dsOut20 = app.data.create(outloc,true)
+dsOut20.prepareToAdd(dsIn20)
+
+dsIn20.each{ rec ->
+    modelVars20.each{ varName ->
+        int index = myModel20.binnings[varName].index(rec[varName])
+        double[] weights = myModel20.getVarBinningWeights(varName)
+        rec["${varName}_weight"] = weights[index]
+    }
+    
+rec.ScaledScore = rec.AGE_OF_APPLICANT_weight + rec.APPLICANT_INCOME_weight + rec.NUMBER_OF_CREDIT_BUREAU_ENQUIRIES_weight + rec.MARITAL_RESIDENTIAL_weight + rec.EDUCATION_STATUS_weight
+
+ 
+    dsOut20.add(rec)
+}
+dsOut20.save()
+
+
+/******************************************************************************************************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    

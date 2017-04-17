@@ -1,0 +1,66 @@
+/** 
+ * Created by Scorecard Model Editor by user RichardCowley
+ * on Tue Feb 14 16:51:38 GMT 2017
+ * Version 7.5
+ *
+ * NOTE: Changes to this file may be lost or cause the editor to fail.
+ */
+requires(heap:'2048M')
+
+Dataset ds = app.data.open(source: '../../data/KGB_Candidates/Development_Candidates.mbd')
+
+String otherPredictors = 'LOAN_AMOUNT MARITAL_STATUS NUMBER_OF_DEPENDANTS NUMBER_OF_LOANS'
+TaskResult result = app.task.buildScorecard()
+{
+    scorecard(
+        modelName: 'KGB_Model',
+        in: ds,
+        target: 'performanceGB_60',
+        objective: 'divergence',
+        binnings: 'KGB_Model.mbbin',
+        initial: 'AGE_OF_APPLICANT APPLICANT_INCOME EDUCATION_STATUS MARITAL_RESIDENTIAL NUMBER_OF_CREDIT_BUREAU_ENQUIRIES',
+        penalty: 0.001,
+        autoCross: true)
+
+    fitOdds(
+        target: 'performanceGB_60',
+        trimType: 'none',
+        evalBins: 10,
+        evalTrimPercent: 5.0,
+        binMinCount: 20,
+        fit: 'linear')
+
+    scale(
+        precision: 0,
+        allocate: 'commonMin',
+        pdo: 20.0,
+        scaledValue: 500.0,
+        odds: 1.0,
+        retainOriginal: true)
+
+    performance(
+        target: 'performanceGB_60',
+        scores: 'KGB_Model_score',
+        scoresAscending: 'KGB_Model_score',
+        numBins: 40)
+
+}
+
+
+app.report.scorecard(
+    in: result,
+    out: '../../scripts/D_KGB_Development/reports/KGB_Model_Model_Training.html')
+
+
+app.report.fitOdds(
+    in: result,
+    out: '../../scripts/D_KGB_Development/reports/KGB_Model_Fit_Log_Odds.html',
+    model: 'KGB_Model')
+
+
+app.report.performance(
+    in: result,
+    out: '../../scripts/D_KGB_Development/reports/KGB_Model_Model_Performance.html',
+    model: 'KGB_Model')
+
+

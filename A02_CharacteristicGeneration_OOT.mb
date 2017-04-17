@@ -1,0 +1,39 @@
+//Imports the functionality of the java DateUtil function
+import com.fairisaac.mb.common.util.DateUtil
+
+//Open the data
+Dataset ds1 = app.data.open(source: '../../../data/DataProcessing/OutOfTime_App_Perf_Data_Raw.mbd')
+
+//Create a new dataset ready to receive the new file - overwrite = true
+Dataset ds2= app.data.create('../../../data/DataProcessing/OutOfTime_App_Perf_Data_Chars.mbd',true)
+
+//Loop through all records in the dataset
+for (Record rec in ds1) {
+
+// AGE_OF_APPLICANT
+
+if(rec.DATE_OF_BIRTH != null && rec.APPLICATION_DATE !=null) //Check both dates are populated
+{rec.AGE_OF_APPLICANT = (DateUtil.getYear(rec['APPLICATION_DATE']) - DateUtil.getYear(rec['DATE_OF_BIRTH'])) + (DateUtil.getMonth(rec['APPLICATION_DATE']) - DateUtil.getMonth(rec['DATE_OF_BIRTH']))/12}
+else {rec.AGE_OF_APPLICANT=-999}
+
+// CROSS VARIABLES
+
+// Concatenates Marital status and REsidential Status with an additional &
+rec.MARITAL_RESIDENTIAL = rec.MARITAL_STATUS +' & '+ rec.RESIDENTIAL_STATUS
+
+// MAXIMUM_DELINQUENCY
+
+//Initialise a non dataset variable to 0
+worstDelq = 0
+
+//Loop through all available performance on the data
+for (i=1; i<31 ; i++){
+    if (rec["DELQ" + i] > worstDelq) {worstDelq = rec["DELQ" + i]} 
+    }
+
+//finally record the contents of the temporary variable in a dataset variable    
+rec.WORSTDELQ = worstDelq
+       
+    ds2.add(rec)    
+}
+ds2.save()

@@ -1,0 +1,11 @@
+
+// Run auto binning
+Dataset ds = app.data.open(in:"../../data/KGB_Candidates/Development_Candidates.mbd")
+results = app.task.autobinner(in: ds, target: 'performanceGB_60', algorithm: 'CoarseFineSupervised')
+    {
+    inputs(vars : 'AGE_OF_APPLICANT APPLICANT_INCOME LOAN_AMOUNT NUMBER_OF_CREDIT_BUREAU_ENQUIRIES NUMBER_OF_DEPENDANTS NUMBER_OF_LOANS', binType : 'numeric3')
+    inputs(vars : 'EDUCATION_STATUS MARITAL_RESIDENTIAL MARITAL_STATUS', binType : 'discrete')
+    }
+
+BinningLibrary library = results.lib
+library.saveAs(new File('KGB_Model.mbbin'))

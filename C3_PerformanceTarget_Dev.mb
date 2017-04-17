@@ -1,0 +1,13 @@
+
+
+// Open dataset and apply any required transformations
+Dataset ds = app.data.open(in : '../../../data/DataProcessing/Development_App_Perf_Data_SummaryCounts.mbd', filter:app.filter.where("FINAL_DECISION >0"))
+{
+    binaryTarget(vars: 'targetGB_60=performanceGB_60', low: '3', lowLabel: 'Bads', high: '7', highLabel: 'Goods', otherGroupLabel: 'Other') 
+    flattenArray(vars: 'Arr_FICO_FI_PRF_CURR_DELQ') // Must flatten array because the model cannot be scored out if an Array variable is present
+}
+Dataset dsout = app.data.create('../../../data/KGB_Candidates/Development_Candidates.mbd',true)
+app.data.copy(in : ds,out: dsout) 
+
+
+

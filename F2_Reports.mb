@@ -1,0 +1,101 @@
+import com.fairisaac.mb.data.*
+Record myrec = new DataRecord()
+Record myrec2 = new DataRecord()
+
+String DevData ="../../data/Scored/Development_Scored.mbd"
+String modelURI20 = '../D_KGB_Development/KGB.pmml'
+String OOTData = '../../data/Scored/OutOfTime_Scored.mbd'
+
+
+
+NumericModel myModel20 = app.model.load(modelURI20)
+ArrayList modelVars20 = myModel20.binnings.keySet()
+
+app.logger.info("*********Baseline Performance**************")
+String Report_baseline = 'Baseline_Report.xls'                      //The Excel report name for Baseline performance numbers
+TaskResult result_baseline = app.task.performance(in:DevData,
+    target: 'performanceGB_60',                                            //Target specified should be categorical
+    scores: 'ScaledScore',
+    scoresAscending: 'ScaledScore',
+)
+//app.logger.info(result_baseline.toString())                         //Prints the performance information in the Log file
+app.report.performance(in: result_baseline, out:Report_baseline)    //Prints the performance information in the excel report file
+
+
+
+app.logger.info("*********Current Performance**************")
+String Report_current = 'Current_Report.xls'                        //The Excel report name for Current month performance numbers
+TaskResult result_current = app.task.performance(in:OOTData,
+    target: 'performanceGB_60',                                            //Target specified should be categorical
+    scores: 'ScaledScore',
+    scoresAscending: 'ScaledScore',
+)
+//app.logger.info(result_current.toString())                          //Prints the performance information in the Log file
+app.report.performance(in: result_current, out:Report_current)      //Prints the performance information in the excel report file
+
+
+TaskResult BaselineStats = app.task.stats(in:DevData){
+    modelVars20.each() {
+        uni(vars:'performanceGB_60', by: it + '_label', table: 'Var_' + it, stats:'count countZero')
+    }
+
+}
+TaskResult OOTStats = app.task.stats(in:OOTData){
+    modelVars20.each() {
+        uni(vars:'performanceGB_60', by: it + '_label', table: 'Var_' + it, stats:'count countZero')}
+
+}
+
+
+Dataset BaselineReports = app.data.create()
+Dataset OOTReports = app.data.create()
+
+    BaselineReports.newVariable("Characteristic", "numeric")
+    BaselineReports.newVariable("Attribute", "numeric")
+    BaselineReports.newVariable("Dev_Total", "numeric")
+    BaselineReports.newVariable("Dev_Bads", "numeric")
+    BaselineReports.newVariable("Dev_Goods", "numeric")
+    
+    OOTReports.newVariable("Characteristic", "numeric")
+    OOTReports.newVariable("Attribute", "numeric")
+    OOTReports.newVariable("OOT_Total", "numeric")
+    OOTReports.newVariable("OOT_Bads", "numeric") 
+    OOTReports.newVariable("OOT_Goods", "numeric")
+
+ modelVars20.each() {
+ 
+    Table Baseline= BaselineStats["Var_" + it]
+
+    Table OOT= OOTStats["Var_" + it]
+
+
+    Baseline.each() { row ->
+        myrec.Characteristic = it
+        myrec.Attribute = row[it + "_label"]
+        myrec.Dev_Total = row.count
+        myrec.Dev_Bads = row.countZero
+        myrec.Dev_Goods = row.count - row.countZero
+
+        BaselineReports.add(myrec)
+    }
+      OOT.each() { row2 ->
+        myrec2.Characteristic = it
+        myrec2.Attribute = row2[it + "_label"]
+        myrec2.OOT_Total = row2.count
+        myrec2.OOT_Bads = row2.countZero
+        myrec2.OOT_Goods = row2.count - row2.countZero
+
+        OOTReports.add(myrec2)
+    }
+  }
+  
+  BaselineReports.save()
+  OOTReports.save()
+  
+ Dataset MergeDevOOT = app.task.join(keys:'Characteristic Attribute') {
+    input(in:BaselineReports, required:false)
+    input(in:OOTReports, required:false)}.dataset
+
+TaskResult export1 = app.task.exportData(in:MergeDevOOT, out:"BackEndCharAnalysis.csv", overwrite:true)
+    
+    

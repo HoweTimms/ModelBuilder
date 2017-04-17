@@ -1,0 +1,122 @@
+import com.fairisaac.mb.data.*
+Record myrec = new DataRecord()
+Record myrec2 = new DataRecord()
+Record myrec3 = new DataRecord()
+String ScorecardLocation = '../D_KGB_Development/results/'
+HasHoldout = 0 // indicator to use setid
+ModelName = "KGB_Model"
+
+
+Dataset ModelDetailTable = app.data.create() 
+
+ModelDetailTable.newVariable('variable', 'string')
+ModelDetailTable.newVariable('binIndex', 'numeric')
+ModelDetailTable.newVariable('binLabel', 'string')
+ModelDetailTable.newVariable('weight', 'numeric')
+ModelDetailTable.newVariable('trainWOE', 'numeric')
+ModelDetailTable.newVariable('trainAvgPartialScore', 'numeric')
+ModelDetailTable.newVariable('trainMC', 'numeric')
+ModelDetailTable.newVariable('trainHighPct', 'numeric')
+ModelDetailTable.newVariable('trainLowPct', 'numeric')
+ModelDetailTable.newVariable('trainAvgScore', 'numeric')
+ModelDetailTable.newVariable('testWOE', 'numeric')
+ModelDetailTable.newVariable('testAvgPartialScore', 'numeric')
+ModelDetailTable.newVariable('testMC', 'numeric')
+ModelDetailTable.newVariable('testHighPct', 'numeric')
+ModelDetailTable.newVariable('testLowPct', 'numeric')
+
+
+ModelDetailTable.newVariable("Version", "numeric")
+
+VersionTree versionTree = app.result.loadTree(type:'scorecard', name:ModelName, location:ScorecardLocation)
+Dataset ModelNotes = app.data.create()
+ModelNotes.newVariable("Version", "numeric")
+ModelNotes.newVariable("Note", "string")
+ModelNotes.newVariable("User", "string")
+ModelNotes.newVariable("Gini", "numeric")
+
+modelResult1 = app.result.load(file: ScorecardLocation + 'scorecard.' + ModelName + '.mbr')
+endLoop = modelResult1.version +1
+
+for (i=1; i<endLoop; i++){
+    modelVersion = app.result.load(file: ScorecardLocation + 'scorecard.' + ModelName + '.' + i + '.mbr')
+    if (modelVersion != null) {
+        myrec.Version = i
+        myrec.Note = modelVersion.notes
+        myrec.user = modelVersion.user
+        ModelPerfString = ""
+        
+        modelVersion.performance.summary.each(){
+            if (HasHoldout == 1) {
+       
+            if (it.SetId== 1 && it.score_var == ModelName + "_score") {myrec.Train_Divergence = it.divergence; myrec.Train_Gini = it.Gini;}
+            if (it.SetId== 2 && it.score_var == ModelName + "_score") {myrec.Test_Divergence = it.divergence; myrec.Test_Gini = it.Gini; }
+            }
+            else {
+                if (it.score_var == ModelName + "_score") {myrec.Train_Divergence = it.divergence; myrec.Train_Gini = it.Gini;}
+            }
+        }
+        ModelNotes.add(myrec)
+        modelVersion.details.each() { row ->
+            myrec3.Version = i
+            myrec3.variable= row['variable']
+            myrec3.binIndex= row['binIndex']
+            myrec3.binLabel= row['binLabel']
+            myrec3.weight= row['weight']
+            myrec3.trainWOE= row['trainWOE']
+            myrec3.trainAvgPartialScore= row['trainAvgPartialScore']
+            myrec3.trainMC= row['trainMC']
+            myrec3.trainHighPct= row['trainHigh%']
+            myrec3.trainLowPct= row['trainLow%']
+            myrec3.trainAvgScore= row['trainAvgScore']
+            myrec3.testWOE= row['testWOE']
+            myrec3.testAvgPartialScore= row['testAvgPartialScore']
+            myrec3.testMC= row['testMC']
+            myrec3.testHighPct= row['testHigh%']
+            myrec3.testLowPct= row['testLow%']
+
+            ModelDetailTable.add(myrec3)    
+        }
+
+        
+        
+    }
+}    
+ModelNotes.save()
+ModelDetailTable.save()
+
+Dataset ModelNotes2 = app.data.create()
+ModelNotes2.newVariable("Version", "numeric")
+ModelNotes2.newVariable("LastModified", "string")
+ModelNotes2.newVariable("User", "string")
+
+VersionNode root = versionTree.root
+printVersion(root, myrec2, ModelNotes2)
+ModelNotes2.save()
+/*
+* Print some info about version node
+*/
+void printVersion(node, myrec2, ModelNotes2) {
+    
+    myrec2.Version = node.version
+    myrec2.LastModified = node.lastModified
+    myrec2.User = node.lastModifiedUser
+    ModelNotes2.add(myrec2)
+    
+    if (node.isLeaf() == false) {
+        children = node.children;
+        children.each () { child ->
+            printVersion(child, myrec2, ModelNotes2);
+        }
+    }
+} 
+
+Dataset ModelNotes3 = app.task.join(keys: 'Version'){
+    input (in:ModelNotes, required:false)
+    input( in:ModelNotes2, required:false)
+}.dataset
+
+TaskResult export1 = app.task.exportData(in:ModelNotes3, out:"ModelIterationsPerformance.csv", overwrite:true)
+TaskResult export2 = app.task.exportData(in:ModelDetailTable, out:"ModelIterationsDetails.csv", overwrite:true)
+
+

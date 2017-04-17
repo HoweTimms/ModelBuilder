@@ -1,0 +1,31 @@
+
+/* 
+Open the Application Dataset
+'../' indicates move up one directory
+
+Open the Monthly Performance Dataset
+ 
+*/
+
+Dataset dsApp1 = app.data.open(in:'../../../Data/RawData/OutOfTime_App_Data.mbd')  
+Dataset dsPerf1 = app.data.open(in:'../../../Data/RawData/OutOfTime_Perf_Data.mbd')
+
+/*
+ Merge the datasets together by the unique id which is APPLICATION_NUMBER
+
+ The type returned is a TaskResult - this allows statistics to be output on the task
+ This can be named anything, in this instance AppPerfMerge
+ multiple keys can be specified
+ */
+ 
+ // Required is true for App Data and false for PErf data as we want to keep all 
+ // applications even where performance is not present (e.g. Declines)
+TaskResult AppPerfMerge = app.task.join(keys:'APPLICATION_NUMBER', out:'../../../Data/DataProcessing/OutOfTime_App_Perf_Data_Raw.mbd'){
+    input (in: dsApp1, required:true, tag:"appDataPresent")
+    input (in: dsPerf1, required:false, tag:"PerfDataPresent")    
+}
+
+//Write out the results of the join to the log . 
+app.logger.info(AppPerfMerge.toString())
+
+

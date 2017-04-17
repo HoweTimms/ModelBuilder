@@ -1,0 +1,40 @@
+import java.util.*;
+import java.text.*;
+import com.fairisaac.mb.data.*
+import java.util.ArrayList
+import com.fairisaac.mb.common.util.DateUtil;
+import com.fairisaac.mb.common.util.*
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------//
+
+Dataset dsb1 = app.data.open(source:'../../../data/DataProcessing/Development_App_Perf_Data_GBFlag.mbd')
+Dataset dsb2 = app.data.create('../../../data/DataProcessing/Development_App_Perf_Data_SummaryCounts.mbd',true)
+dsb2.prepareToAdd(dsb1)
+
+dsb1.each() { Record  rec ->
+
+if (rec['Exclusion'] == 1) rec['FINAL_DECISION'] = 0;          //Excluded due to Missing DOB
+else if (rec['Exclusion'] == 2) rec['FINAL_DECISION'] = 0;     // Excluded due to underage
+else if (rec['Exclusion'] == 3) rec['FINAL_DECISION'] = 0;     // Excluded due to deceased
+else if (rec['Exclusion'] == 4) rec['FINAL_DECISION'] = 0;     // Excluded due to accepted without performance 
+
+else if (rec['targetGB_60'] == 3 ) rec['FINAL_DECISION'] = 30; //Bads
+else if (rec['targetGB_60'] == 4 ) rec['FINAL_DECISION'] = 80; //NTU
+else if (rec['targetGB_60'] == 5 ) rec['FINAL_DECISION'] = 20; //Rejected
+else if (rec['targetGB_60'] == 6 ) rec['FINAL_DECISION'] = 60; //Indeterminates
+else if (rec['targetGB_60'] == 7 ) rec['FINAL_DECISION'] = 70; //Goods
+else rec['FINAL_DECISION'] = 0;  //Unknown
+
+dsb2.add(rec)
+}
+dsb2.save()
+
+TaskResult results_cards = app.task.stats( in: dsb2 ) 
+   {
+    freq ( vars : ' Exclusion', maxCount: 300000, maxLevel: 300000)
+    
+    freq ( vars : ' targetGB_60 FINAL_DECISION', maxCount: 300000, maxLevel: 300000)
+   } 
+  app.logger.info( results_cards.toString())
+  
+

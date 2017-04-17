@@ -1,0 +1,91 @@
+
+/*
+	 * Model tracking reports, using a second dataset to derive baseline %s
+	 * (MT02_PopStabilityBaselineDataset.mb)
+	 * 
+	 * Create Population Stability (PS) and Characteristic Analysis (CA)
+	 * reports using a pair of datasets, a trained scorecard or scorecard 
+	 * task result (.pmml), and a user-defined score binning. 
+	 * Baseline %s are calculated from the baseline dataset for both PS and
+	 * CA. Output is printed to STDOUT, the .log file and to an external 
+	 * HTML report file.
+	 */
+
+
+String commentary =  '''Baseline %'s for Population Stability and Characteristic Analysis obtained from baseline dataset.'''
+
+
+//--------------------- Manual Binning Start----------------------------------------------------------------
+
+//      In case binning boundaries should be defined manuallly 
+//      uncomment this section and comment Automated binning part
+
+//      define a score binning for Population Stability
+
+
+//Binning psiBinning = app.binning.numeric([100, 140, 175, 185, 190, 195, 200, 205, 210, 215, 225, 300,350])
+//psiBinning.addBin('*m')
+//--------------------- Manual Binning End----------------------------------------------------------------
+
+	
+
+//----------------------Automated Binning Start------------------------------------------------------------
+
+//      Identifies the 11 score boundaries
+
+    String recentDataset   = '../../data/Scored/OutOfTime_Scored.mbd' // specify recent dataset
+    String baselineDataset = '../../data/Scored/Development_Scored.mbd' // specify baseline dataset
+    String myScore = 'ScaledScore' //specify score column
+    String myModel = '../D_KGB_Development/KGB.pmml'
+    String Report = './Popstability&CharAnalysis.html'
+
+
+	TaskResult scorebounds = app.task.stats(in: baselineDataset) {
+	   quant(vars: myScore, bounds: 'deciles', table: 'bounds')
+	}
+	Table boundsTable = scorebounds.bounds
+	app.logger.info(boundsTable.toString())
+	
+//	// Creates the binning
+	Binning psiBinning = app.binning.numeric()
+	// First bin
+	int start1 = boundsTable[boundsTable.getColumnNames()[2].toString()].flatten()[0].toInteger()
+	spec = "(-, "+start1+")"
+	psiBinning.addBin(spec)
+	// Middle bins
+	for(int i = 2; i<boundsTable.getColumnNames().size()-2; i++) {
+	    int start = boundsTable[boundsTable.getColumnNames()[i].toString()].flatten()[0].toInteger()
+	    int last = boundsTable[boundsTable.getColumnNames()[i+1].toString()].flatten()[0].toInteger()
+	    spec = "["+start+", "+last+")"
+	    psiBinning.addBin(spec)
+	}
+	// Last bin
+	int last1 = boundsTable[boundsTable.getColumnNames()[boundsTable.getColumnNames().size().toInteger()-2].toString()].flatten()[0].toInteger()
+	spec = "["+last1+", +)"
+	psiBinning.addBin(spec)
+//	
+//----------------------Automated Binning End-----------------------------------------------------------------
+
+
+            //generates PSI and characteristic analysis results
+
+TaskResult trackingResult = app.task.modelTracking(
+    in: recentDataset,//resent scored dataset
+    //weight: 'sampwt', //sample weight for the recent data           
+    model:myModel ,    
+    scoreVariable: myScore,//this field should be present in both recent and baseline datasets.
+    scoreBinning: psiBinning,     
+    baselineDataset: baselineDataset,//if not specified only recent counts will be reflected
+    //baselineWeight: 'sampwt', //sample weight for the baseline data    
+)
+
+app.logger.info(trackingResult.toString())    
+
+
+//generates final report with PSI and characteristic analysis results
+
+app.report.modelTracking(
+    in: trackingResult,   
+    out: Report,
+    comments: commentary,
+)

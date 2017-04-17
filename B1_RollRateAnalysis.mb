@@ -1,0 +1,185 @@
+import com.fairisaac.mb.data.*
+import com.fairisaac.mb.common.util.DateUtil;
+    
+app.logger.info("*********************************************************************************")
+app.logger.info("*********                    Code Launched                         **************")
+app.logger.info("*********************************************************************************")
+
+String Path = "../../data/DataProcessing/" //location to dataset 
+String sourceData = "Development_App_Perf_Data_Excl.mbd"// dataset name
+int NumberOfPerfMonths = 30
+String FirstPerfMonth = '20130730'  // YYYYMMDD            Date of DELQ0 extract i.e. oldest data
+
+//A map is similar to a multiple dimensional array however it can have different constructs
+// e.g. a different number of columns for each row 
+def Map=[:]
+
+//define a filter, this can be on the same line but seperate here for clarity
+// filter non-excluisons. only eligible for development population is considered.
+String filterString = "Exclusion ==0 && AcctOpen_Ind==1"
+
+String ArrayVars = ""
+for (i=0; i<=NumberOfPerfMonths; i++){
+    if (i==0) ArrayVars = "DELQ" + i
+    else ArrayVars = ArrayVars + " DELQ" + i 
+}
+Dataset dsInput = app.data.open(source:Path + sourceData, filter:app.filter.where(filterString))
+{
+    //generates delinquency array. array contains 31 months of historic delinquency
+    buildArray(vars: ArrayVars, name: 'Arr_FICO_FI_PRF_CURR_DELQ', drop: true, asList: true)
+    
+  }
+  
+Dataset DsInputWithArray = app.data.create()
+
+app.data.copy(in:dsInput, out:DsInputWithArray)
+
+//prepare to add copies metadata such as date formats , if this is applied to dsInput then the array is lost hence the above copy statement
+
+DsInputWithArray.each{rec->
+
+def DelqArr = [] 
+    //-------------- transform days past due to delinquency buckets
+    //-------------- population of cycles delinquency array
+for (int i = 0; i<= NumberOfPerfMonths; i++)
+{
+  DelqArr[i] = 99
+  if (MV.isMissing(rec.Arr_FICO_FI_PRF_CURR_DELQ[i]))  DelqArr[i] = 99
+  else if (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] == 0) DelqArr[i] = 0
+  else if ((rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 1) && (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] <= 30)) DelqArr[i] = 1
+  else if ((rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 31) && (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] <= 60)) DelqArr[i] = 2
+  else if ((rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 61) && (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] <= 90)) DelqArr[i] = 3
+  else if ((rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 91) && (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] <=120)) DelqArr[i] = 4
+  else if ((rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 121) && (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] <=150)) DelqArr[i] = 5
+  else if ((rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 151) && (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] <=180)) DelqArr[i] = 6
+  else if (rec.Arr_FICO_FI_PRF_CURR_DELQ[i] >= 181)  DelqArr[i] = 6
+}
+        
+    // create FICO_Open_Index
+    
+    Date dt1 = DateUtil.parseToDate(FirstPerfMonth, 'yyyyMMdd') //set the processing date
+    rec['FICO_Open_Index'] = DateUtil.monthsAfter(dt1, rec['APPLICATION_DATE'])
+
+
+
+
+  
+//output the data for final roll rate analysis
+//counts for all possible rolls and all accounts will be reflected
+
+
+    for (int i=rec.FICO_Open_Index; i<NumberOfPerfMonths; i++)
+    {
+        x = DelqArr[i]
+        y = DelqArr[i+1]
+        ID = ("|"+x.toString() + "|" +y.toString()+"|").toString()   //combination of current and next delinquency
+        if (Map[ID]==null)  Map[ID]=[key:ID, 'counter':1, 'CurrMonth':x, 'NextMonth':y] //if not already found then create a new one
+        else                Map[ID]['counter']= Map[ID]['counter']+1   //otherwise increment the counter
+    }
+
+
+}
+
+Dataset RollDetail = app.data.create("../../data/RollRateResults/RollRateDetail.mbd",true)
+Dataset RollSummary1 = app.data.create("../../data/RollRateResults/RollRateTable.mbd",true)
+Dataset RollSummary2 = app.data.create("../../data/RollRateResults/RollRateSummary.mbd",true)
+
+
+Record myrec = new DataRecord()
+Record myrec2 = new DataRecord()
+Record myrec3 = new DataRecord()
+
+//take the results from the map and add to a dataset for viewing
+for (i in Map)
+{
+    myrec.CurrentMonth = i.value.CurrMonth.value
+    myrec.NextMonth = i.value.NextMonth.value
+    myrec.counter = i.value.counter.value
+    RollDetail.add(myrec)
+
+}
+RollDetail.save()
+
+Dataset DetailSorted = app.task.sort(in:RollDetail, keys:'CurrentMonth NextMonth').dataset  //perform a sort direct to a dataset 
+int RowCount =0
+lastDelq = -1000  //used to check if the last record has same delinquency as this
+DetailSorted.each(){Record rec ->
+    if (rec.CurrentMonth != lastDelq && lastDelq != -1000) {
+        myrec2.Total = RowCount
+        RollSummary1.add(myrec2)
+        myrec2.Delinquency = rec.CurrentMonth
+        int nextDelq = rec.NextMonth
+        myrec2["MovedTo_" + nextDelq] = rec.counter
+        RowCount = rec.counter
+    }
+    else {
+        myrec2.Delinquency = rec.CurrentMonth
+        int nextDelq = rec.NextMonth
+        myrec2["MovedTo_" + nextDelq] = rec.counter
+        RowCount = RowCount + rec.counter
+    }
+    lastDelq = rec.CurrentMonth
+}
+myrec2.Total = RowCount
+RollSummary1.add(myrec2)
+RollSummary1.save()
+
+RollSummary1.each(){Record rec->
+Closed = 0
+Improved = 0
+StaySame =0
+Worsen =0
+
+    for (int i = 0; i< 8; i++) {
+            if (rec.Delinquency == 99) {
+                Improved = rec.Total - rec.MovedTo_99
+                StaySame = rec.MovedTo_99
+                Worsen =0
+                Closed =0
+            }
+            else if (i< rec.Delinquency && rec["MovedTo_" + i] >0) Improved = Improved + rec["MovedTo_" + i]
+            else if (i==rec.Delinquency && rec["MovedTo_" + i] >0) StaySame = StaySame + rec["MovedTo_" + i]
+            else if (i>rec.Delinquency && rec["MovedTo_" + i] >0) Worsen = Worsen + rec["MovedTo_" + i]
+            Closed = rec.MovedTo_99
+            
+            
+            
+            
+    }
+    myrec3.Delinquency = rec.Delinquency
+    myrec3.Improved_Vol = Improved 
+    myrec3.StaySame_Vol = StaySame 
+    myrec3.Worsen_Vol = Worsen 
+    myrec3.Closed_Vol = Closed 
+    myrec3.Closed_Pct = Closed / rec.Total * 100
+    myrec3.Improved_Pct = Improved / rec.Total *100
+    
+    myrec3.StaySame_Pct = StaySame / rec.Total * 100
+    myrec3.Worsen_Pct = Worsen / rec.Total * 100
+    Bad = 0
+    indi = 0
+    if (rec.Delinquency == 99) myrec3.RecommendedDefinition = "N/A"
+    else if (myrec3.Worsen_Pct >50 || Bad ==1 ){
+        myrec3.RecommendedDefinition = "Bad"
+        Bad = 1
+        }
+    else if ((rec.Delinquency != 0 && myrec3.Worsen_Pct > myrec3.Improved_Pct)  || indi ==1){
+        myrec3.RecommendedDefinition = "Indeterminate"
+        indi = 1
+        }
+    else myrec3.RecommendedDefinition = "Good"
+
+    RollSummary2.add(myrec3)
+}
+RollSummary2.save()
+
+
+
+
+
+
+
+
+
+
+

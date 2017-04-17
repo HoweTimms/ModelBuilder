@@ -1,0 +1,99 @@
+import java.lang.Math;
+import java.text.*;
+import com.fairisaac.mb.common.util.DateUtil;
+import com.fairisaac.mb.data.*
+import com.fairisaac.mb.data.*
+import com.fairisaac.mb.common.util.*
+import static com.fairisaac.mb.common.util.DateUtil.*
+import com.fairisaac.mb.data.DataRecord
+import com.fairisaac.mb.common.util.DateUtil
+import java.util.ArrayList
+import com.fairisaac.mb.api.data.*
+import com.fairisaac.mb.api.data.Dataset
+import com.fairisaac.mb.common.lib.*
+import com.fairisaac.mb.common.task.*
+import java.text.*
+import java.util.*
+
+app.logger.info("*********************************************************************************")
+app.logger.info("*********                    Code Launched                         **************")
+app.logger.info("*********************************************************************************")
+
+
+
+
+String InputPath = '../../data/KGB_Candidates/Development_Candidates.mbd'
+String OutputPath ="../../data/Scored/Development_Scored.mbd"
+
+
+String InputModel       = '../D_KGB_Development/results/scorecard.KGB_Model.mbr'
+String OutputModel      = '../D_KGB_Development/KGB.pmml'
+String ScoreAuditReport = '../D_KGB_Development/KGB_Audit_Report.csv'
+
+
+/**************************************************************************************************************************************/
+/*******************************************NO CHANGES BELOW THIS LINE*****************************************************************/
+/**************************************************************************************************************************************/
+
+//Exporting mbr to pmml
+ScaledModel = app.result.load(file: InputModel).scaledModel
+app.model.save(ScaledModel, OutputModel)
+
+
+// List of variables in the model
+myModel = app.model.load(OutputModel)
+ArrayList modelVars = myModel.binnings.keySet()
+
+
+
+//Scoring dataset with AGB model
+Dataset ds1 = app.data.open(source:InputPath){
+
+    modelVars.each{ varName -> 
+        bin(vars:varName, binner:myModel.binnings[varName], use:'numeric')     
+        bin(vars:varName, binner:myModel.binnings[varName], use:'label', suffix: '_label')                                              
+    }
+}
+
+
+app.logger.info("Records in input file  :"+ds1.size())
+
+
+Dataset ds = app.data.create(in:OutputPath, force: true)
+app.data.copy(in: ds1, out: ds)
+
+ds.each() { Record rec ->
+    // Compute a score
+    double score = myModel.score(rec)
+    // Add to dataset record
+    rec.ScaledScore = score
+}
+ds.save()
+
+
+
+
+// Open dataset, binning the model variables
+Dataset dsIn = app.data.open( in:OutputPath)
+
+
+
+// Get model weight for each binning
+Dataset dsOut = app.data.create()
+dsOut.prepareToAdd(dsIn)
+dsIn.each{ rec ->
+    rec['finalScore'] = myModel.score(rec)
+
+    modelVars.each{ varName ->
+        int index = myModel.binnings[varName].index(rec[varName])
+        double[] weights = myModel.getVarBinningWeights(varName)
+        rec["${varName}_weight"] = weights[index]
+    }
+    dsOut.add(rec)
+} 
+dsOut.save()
+
+app.task.exportData(in: dsOut, out:ScoreAuditReport, overwrite:true)
+
+
+
